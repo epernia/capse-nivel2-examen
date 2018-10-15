@@ -1,0 +1,110 @@
+* Definición del problema
+Control de un ascensor: máquina de ingreso de piso
+4 posibles estados:
+  + EN_ESPERA_DE_DIGITO_1
+  + EN_ESPERA_DE_DIGITO_2_O_LETRA
+  + EN_ESPERA_DE_LETRA
+  + GUARDAR_PISO
+  
+HW que se necesita:
+  + Display LCD
+  + Teclado Matricial
+  
+** Diagrama Gral
+
+#+BEGIN_SRC plantuml :file try.png :export both
+@startuml
+class mefAscensor {
+  .. Fn. Públicas ..
+  mefAscensorInit()
+  mefAscensorUpdate()
+}
+
+class mefIngresoPiso {
+  .. Fn. Públicas ..
+  + mefIngresoPisoInit()
+  + mefIngresoPisoUpdate()
+  __ private data __
+  int age
+}
+
+class mefPuertas {
+  .. Fn. Públicas ..
+   + mefPuertasInit() 
+   + mefPuertasUpdate()
+}
+
+class mefModoConfiguracion {
+  .. Fn. Públicas ..
+  + mefModoConfiguracionInit()
+  + mefModoConfiguracionUpdate()
+}
+
+interface program {
+  .. Var. públicas ..
+  + bool_t modoConfiguracion
+  + bool_t secuenciaAperturaDePuertas
+  + bool_t secuenciaCerradoDePuertas
+  + circularBuffer_t pisosPendientes
+}
+@enduml
+#+END_SRC
+
+#+RESULTS:
+[[file:try.png]]
+
+** Diagrama MEF Ingreso Piso
+#+BEGIN_SRC plantuml :file mefingresopiso.png
+@startuml
+[*] --> MEFIngresoPiso
+
+state MEFIngresoPiso {
+  EN_ESPERA_DE_DIGITO_1 --> EN_ESPERA_DE_DIGITO_2_O_LETRA: presionan un número
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_LETRA: presionan un número
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> GUARDAR_PISO: presionan ""A""
+  
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_DIGITO_1: timeout[temporizador1=0] o presionan ""B""
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_LETRA: presionan un número
+  EN_ESPERA_DE_LETRA --> EN_ESPERA_DE_DIGITO_1: timeout[temporizador2=0] o presionan ""B""
+  EN_ESPERA_DE_LETRA --> GUARDAR_PISO: presionan ""A""
+  GUARDAR_PISO --> EN_ESPERA_DE_DIGITO_1:cambia de estado (estado espurio)
+
+   EN_ESPERA_DE_DIGITO_1: Poner a 0 vectorPiso
+
+   EN_ESPERA_DE_DIGITO_2_O_LETRA: Inicializar timer1
+   EN_ESPERA_DE_DIGITO_2_O_LETRA: guardar digito1
+
+   EN_ESPERA_DE_LETRA: inicializar timer2
+   EN_ESPERA_DE_LETRA: guardar digito2
+
+   GUARDAR_PISO: Guardar en el buffer el piso como int
+}
+
+@enduml
+#+END_SRC
+
+#+RESULTS:
+[[file:mefingresopiso.png]]
+
+
+** Variables que necesito
+   #+BEGIN_SRC c
+     uint8_t vector_piso;
+   #+END_SRC
+
+** Variables que se deben exporner
+   #+BEGIN_SRC c
+     uint8_t valorTimeOut; // se debe controlar desde config
+   #+END_SRC
+** Control de timers
+   
++ Qué tipo de variable utilizo?
+  + timerMap_t (TIMER0, TIMER1, TIMER2 o TIMER3)
+  + en teoría, cada vez que se llame a la función habrá pasado un segundo, con lo cual no sería necesario usar una interrupción 
++ Cómo incremento el reloj?
++ Cómo determino el paso del tiempo?
+** Casos de borde
++ Qué sucede cuando se presiona alguna letra distinta de =A= o =B=?
++ Qué errores se pueden dar con los pisos negativos?
++ Condición de carrera al accesar una variable compartida con los otros MEF?
++ Existe un algoritmo que se pueda utilizar para actualizar el buffer circular de tal manera que los pisos se guarden ordenados? Igual esto se deber hacer en otro módulo.
