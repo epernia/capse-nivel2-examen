@@ -64,7 +64,6 @@ state MEFIngresoPiso {
   EN_ESPERA_DE_DIGITO_2_O_LETRA --> GUARDAR_PISO: presionan ""A""
   
   EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_DIGITO_1: timeout[temporizador1=0] o presionan ""B""
-  EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_LETRA: presionan un número
   EN_ESPERA_DE_LETRA --> EN_ESPERA_DE_DIGITO_1: timeout[temporizador2=0] o presionan ""B""
   EN_ESPERA_DE_LETRA --> GUARDAR_PISO: presionan ""A""
   GUARDAR_PISO --> EN_ESPERA_DE_DIGITO_1:cambia de estado (estado espurio)
@@ -87,22 +86,25 @@ state MEFIngresoPiso {
 [[file:mefingresopiso.png]]
 
 
+
 ** Variables que necesito
    #+BEGIN_SRC c
      uint8_t vector_piso;
    #+END_SRC
 
-** Variables que se deben exporner
+** Variables que se deben exponer
    #+BEGIN_SRC c
      uint8_t valorTimeOut; // se debe controlar desde config
    #+END_SRC
 ** Control de timers
-   
 + Qué tipo de variable utilizo?
   + timerMap_t (TIMER0, TIMER1, TIMER2 o TIMER3)
   + en teoría, cada vez que se llame a la función habrá pasado un segundo, con lo cual no sería necesario usar una interrupción 
 + Cómo incremento el reloj?
+  + Contador uint
 + Cómo determino el paso del tiempo?
+  + compare simple
++ FIXME: Nunca se debe propagar un timer desde un estado a otro.
 ** Casos de borde
 + Qué sucede cuando se presiona alguna letra distinta de =A= o =B=?
 + Qué errores se pueden dar con los pisos negativos?

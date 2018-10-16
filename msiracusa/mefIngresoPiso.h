@@ -21,6 +21,12 @@ static uint8_t piso;
 mefIngresoPisoState_t mefIngresoPisoCurrentState;
 
 void mefIngresoPisoUpdate( void );
+void readKeyboard();
+void updateLCDDisplayOnKeyPress();
+void printLCDMessage();
+uint8_t updateTimer();
+uint8_t cancelTimer();
+
 
 
 #endif /*INGRESOPISO.H*/
