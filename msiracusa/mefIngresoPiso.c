@@ -4,20 +4,46 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-/* circularBufferUse( pisosPendientes ); */
-#define TIMEOUT 5
+
+// FIXME: Al integrar con el resto de los módulos esto debería desaparecer
+#define TIMEOUT 5   // FIXME: Ver arriba
+#define PISO_MAX 20 // FIXME: Ver arriba
+#define PISO_MIN -5 // FIXME: Ver arriba
+
+// FIXME: Esto ya está definido en programa.c
+/* circularBufferNew( tempBuff, 2, 10 ); // 10 elementos de 2 bytes */
+/* circularBufferInit( tempBuff, 2, 10 ); */
+
+void mefIngresoPisoInit() {
+  /* valor de debugLevel puede ser WARN; INFO o DEBUG */
+  debugLevel |= (1 << DEBUG);
+  uartWriteString(UART_USB, "\n [I] Nivel debug:  ");
+  char *buff[10];
+  sprintf(buff, "%d", debugLevel);
+  uartWriteString(UART_USB, buff);
+
+  /* inicializo los GPIOs que se usaran */
+  /* para leer desde el keypad */
+  for (uint8_t i = 0; i < 4; i++) {
+    gpioConfig(keypad_cols[i], GPIO_OUTPUT);
+  }
+  for (uint8_t i = 0; i < 4; i++) {
+    gpioConfig(keypad_rows[i], GPIO_INPUT_PULLDOWN);
+  }
+  /* tests(); */
+
+}
 
 void mefIngresoPisoUpdate(void) {
   switch (mefIngresoPisoCurrentState) {
   case EN_ESPERA_DE_DIGITO_1: {
-
     printLCDMessage("* bienvenida*");
     piso = readKeypad();
     if (piso >= 0 && piso <= 9) {
-      if ( debugLevel >= (1 << INFO)) {
+      if (debugLevel >= (1 << INFO)) {
         uartWriteString(UART_USB,
-                        "\n [I] EN_ESPERA_DE_DIGITO_1: Leido valor numerico");
-        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_1: Transicion a "
+                        "\n [I] EN_ESPERA_DE_DIGITO_1 ::  Leido valor numerico");
+        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_1 :: Transicion a "
                                   "EN_ESPERA_DE_DIGITO_2_O_LETRA");
       }
       mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_2_O_LETRA;
@@ -37,36 +63,39 @@ void mefIngresoPisoUpdate(void) {
     if (!timer) {
       mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
       printLCDMessage("* timeout *");
-      if (debugLevel >= (1 << INFO))
-        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA: El "
+      if (debugLevel >= (1 << INFO)) {
+        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA :: El "
                                   "usuario no ingreso un valor. Timeout");
+        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA :: "
+                                  "Transicion a EN_ESPERA_DE_DIGITO_1");
+      }
       break;
     }
 
-    uint8_t pisoTemp = readKeypad(); /* correccion Chr -> Dec */
-    if (pisoTemp >= 0 && pisoTemp <= 9) {
-      piso = piso * 10 + pisoTemp;
+    uint8_t userInput = readKeypad(); /* correccion Chr -> Dec */
+    if (userInput >= 0 && userInput <= 9) {
+      piso = piso * 10 + userInput;
       mefIngresoPisoCurrentState = EN_ESPERA_DE_LETRA;
+      cancelTimer();
       if (debugLevel >= (1 << INFO)) {
-        uartWriteString(
-            UART_USB,
-            "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA: Transicion a GUARDAR_PISO");
+        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA :: "
+                                  "Transicion a EN_ESPERA_DE_LETRA");
       }
     } else {
-      if (pisoTemp == 17) { /* usuario presiona 'A' */
+      if (userInput == 17) { /* usuario presiona 'A' */
         mefIngresoPisoCurrentState = GUARDAR_PISO;
         if (debugLevel >= (1 << INFO))
-          uartWriteString(
-              UART_USB,
-              "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA: Transicion a GUARDAR_PISO");
+          uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA :: "
+                                    "Transicion a GUARDAR_PISO");
       } else {
-        if (readKeypad == 18) { /* usuario presiona 'B' */
+        if (userInput == 18) { /* usuario presiona 'B' */
+          cancelTimer();
           mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
           if (debugLevel >= (1 << INFO)) {
             uartWriteString(UART_USB,
-                            "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA: Ingreso de "
+                            "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA :: Ingreso de "
                             "piso cancelado por el usuario");
-            uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA: "
+            uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_DIGITO_2_O_LETRA :: "
                                       "Transicion a EN_ESPERA_DE_DIGITO_1");
           }
         } else {
@@ -77,30 +106,78 @@ void mefIngresoPisoUpdate(void) {
     break;
   }
   case EN_ESPERA_DE_LETRA: {
-    if (!updateTimer()) // debe regresar segundos restantes; */
-      mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
-    /* if (readKeypad == A) { */
-      /* mefIngresoPisoCurrentState = GUARDAR_PISO; */
-    /* } */
-    /* if (readKeypad == B) { */
-      /* mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1; */
-      /* cancelTimer(); */
-    /* } */
+    updateTimer();
+    if (!timer) { // debe regresar segundos restantes; */
+      if (debugLevel >= (1 << INFO)) {
+        uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_LETRA :: El usuario no "
+                                  "ingreso un valor. Timeout ");
+        uartWriteString(
+            UART_USB,
+            "\n [I] EN_ESPERA_DE_LETRA :: Transicion a EN_ESPERA_DE_DIGITO_1");
+        mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
+        break;
+      }
+    }
+    uint8_t userInput = readKeypad(); /* correccion Chr -> Dec */
+
+    if (userInput == 17) { /* usuario presiona 'A'*/
+      mefIngresoPisoCurrentState = GUARDAR_PISO;
+      cancelTimer();
+      if (debugLevel >= (1 << INFO)) {
+        uartWriteString(
+            UART_USB, "\n [I] EN_ESPERA_DE_LETRA :: Transicion a GUARDAR_PISO");
+      }
+
+    } else {
+      if (userInput == 18) { /* usuario presiona 'B'*/
+        mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
+        cancelTimer();
+        if (debugLevel >= (1 << INFO)) {
+          uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_LETRA :: Ingreso de "
+                                    "piso cancelado por el usuario.");
+          uartWriteString(UART_USB, "\n [I] EN_ESPERA_DE_LETRA :: Transicion a "
+                                    "EN_ESPERA_DE_DIGITO_1");
+        }
+      } else {
+        printLCDMessage("opcion invalida");
+      }
+    }
     break;
   }
   case GUARDAR_PISO: {
-    cancelTimer();
+
     if (debugLevel >= (1 << INFO)) {
-      char * buff[10];
+      char *buff[10];
       sprintf(buff, "%d", piso);
       uartWriteString(UART_USB,
-                      "\n [I] GUARDAR_PISO: Valor de piso a almacenar: ");
+                      "\n [I] GUARDAR_PISO :: Valor de piso seleccionado ");
       uartWriteString(UART_USB, buff);
     }
-    /* circularBufferWrite(&pisosPendientes, &piso); */
+
+    /* piso seleccionado no es valido: imprimir mensaje de error */
+    if (piso > PISO_MAX || piso < PISO_MIN) {
+      printLCDMessage("Piso invalido");
+      mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
+      if (debugLevel >= (1 << WARN)) {
+        uartWriteString(UART_USB,
+                        "\n [W] GUARDAR_PISO :: Valor de piso invalido ");
+        uartWriteString(
+            UART_USB,
+            "\n [I] GUARDAR_PISO :: Transicion a EN_ESPERA_DE_DIGITO_1 ");
+      }
+
+      /* piso seleccionado es valido: alamacenar en bufferCircular */
+    } else {
+      circularBufferWrite( &pisosPendientes, &piso);
+      printLCDMessage("Piso almacenado: ");
+      mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1;
+      if (debugLevel >= (1 << INFO)) {
+        uartWriteString(
+            UART_USB,
+            "\n [I] GUARDAR_PISO :: Transicion a EN_ESPERA_DE_DIGITO_1 ");
+      }
+    }
     /* // TODO procesar el buffer y ordenarlo? */
-    /* printLCDMessage(); */
-    /* mefIngresoPisoCurrentState = EN_ESPERA_DE_DIGITO_1; */
     break;
   }
   default:
@@ -123,16 +200,16 @@ uint8_t readKeypad(void) {
         /* realizo el mapeo de [filas][columnas] a caracter ascii */
         user_input = keypad_characters[j][i];
         /* imprimo por uart si esta habilitado el debug */
-        if (debugLevel >= (1 << INFO)) {
+        if (debugLevel >= (1 << DEBUG)) {
           char str[2] = "\0";
           str[0] = user_input;
           uartWriteString(UART_USB,
-                          "\n [I] readKeypad :: Caracter presionado: ");
+                          "\n [D] readKeypad :: Caracter presionado: ");
           uartWriteString(UART_USB, str);
         }
         /* espero a que se deje de presionar el digito */
         while (gpioRead(keypad_rows[j])) {
-          delay(10 / 1000); // delay acepta segundos como parametros
+          delay(1); 
         }
       }
     }
@@ -157,7 +234,7 @@ uint8_t updateTimer() {
   if (context & (1 << TIMER_STARTED))
     timer--;
   else { /* inicializo el timer  */
-    timer = TIMEOUT;
+    timer = TIMEOUT - 1;
     context |= (1 << TIMER_STARTED);
   }
   if (!timer)
@@ -169,35 +246,21 @@ uint8_t updateTimer() {
     uartWriteString(UART_USB, buff);
   }
   // FIXME : Quitar
-  delay(199);
+  /* delay(199); */
   return timer;
 }
 
 uint8_t cancelTimer() {
-  // TODO
+  context &= (0 << TIMER_STARTED);
+  if (debugLevel >= (1 << INFO)) {
+    uartWriteString(UART_USB, "\n [I] cancelTimer :: Timer cancelado ");
+  }
   return 0;
 }
 
 // FIXME: Solamente para pruebas
 // FIXME: Si me queda tiempo, hacer un test con el main
-int main() {
-  boardConfig();
-  uartConfig(UART_USB, 115200);
-  tickConfig(1);
-  debugLevel |= (1 << INFO);
-  uartWriteString(UART_USB, "\n [I] Nivel debug:  ");
-  char * buff[10];
-  sprintf(buff, "%d", debugLevel);
-  uartWriteString(UART_USB, buff);
-
-  /* inicializo los GPIOs que se usaran */
-  /* para leer desde el keypad */
-  for (uint8_t i = 0; i < 4; i++) {
-    gpioConfig(keypad_cols[i], GPIO_OUTPUT);
-  }
-  for (uint8_t i = 0; i < 4; i++) {
-    gpioConfig(keypad_rows[i], GPIO_INPUT_PULLDOWN);
-  }
+void tests() {
 
   for (;;) {
     // prueba lectura teclado
@@ -205,10 +268,9 @@ int main() {
     if (myTec) {
       char buff[10];
       sprintf(buff, "%d", myTec);
-      /* uartWriteString(UART_USB, "\n [I] Lectura teclado "); */
-      /* uartWriteString(UART_USB, buff); */
+      uartWriteString(UART_USB, "\n [I] Lectura teclado ");
+      uartWriteString(UART_USB, buff);
     }
     mefIngresoPisoUpdate();
   }
-  return 0;
 }

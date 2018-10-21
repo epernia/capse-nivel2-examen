@@ -94,7 +94,10 @@ state MEFIngresoPiso {
 
 ** Variables que se deben exponer
    #+BEGIN_SRC c
-     uint8_t valorTimeOut; // se debe controlar desde config
+     uint8_t timeout; // se debe controlar desde config
+     uint8_t piso_max; // se debe controlar desde config
+     uint8_t piso_min; // se debe controlar desde config
+     circularBuffer // definido en programa.c
    #+END_SRC
 ** Control de timers
 + Qué tipo de variable utilizo?
@@ -105,8 +108,33 @@ state MEFIngresoPiso {
 + Cómo determino el paso del tiempo?
   + compare simple
 + FIXME: Nunca se debe propagar un timer desde un estado a otro.
+
+*** Funcionamiento
+Utilicé una variable extra (llamada =uint8_t context=) para mantener el estado del timer[fn:1]. 
+1. La primera vez que se llama a =updateTimer()= se setea =context= con el flag =TIMER_STARTED= y comienza a decrementearse =timer= desde TIMEOUT.
+2. Sucesivas llamadas decrementan el valor de =timer=.
+3. Cuando =timer= llega a =0=, se limpia el flag =TIMER_STARTED= y _debe cambiar el estado de la MEF_ (no se debe llamar a =updateTimer()= desde el mismo estado luego de haber limpiado el flag). Dicho de otra manera bajo la condición que testea que el timer haya expirado debe también incluir una transición de estado.
+4. Si el usuario ingresa una opción antes de que expire el timer, se debe limpiar el flag para que una futura llamada se inicialice nuevamente el =timer= a =TIMEOUT=
+
+
 ** Casos de borde
 + Qué sucede cuando se presiona alguna letra distinta de =A= o =B=?
-+ Qué errores se pueden dar con los pisos negativos?
++ Qué errores se pueden dar con los pisos negativos[fn:2]?
 + Condición de carrera al accesar una variable compartida con los otros MEF?
 + Existe un algoritmo que se pueda utilizar para actualizar el buffer circular de tal manera que los pisos se guarden ordenados? Igual esto se deber hacer en otro módulo.
+
+** Pruebas
+   | DIGITO1 | DIGITO2 | LETRA | TIMEOUT | Resultado esperado        | Resultado observado |
+   |       1 |       1 | A     | No      | Almacena 11 en el buffer  | OK                  |
+   |       0 |       1 | A     | No      | Almacena 1 en el buffer   | OK                  |
+   |       1 |       A | NA    | No      | Almacena 1 en el buffer   | OK                  |
+   |       1 |       1 | B     | No      | Cancela el ingreso        | OK                  |
+   |       1 |      NA | B     | No      | Cancela el ingreso        | OK                  |
+   |       9 |       9 | NA    | No      | Da piso invalido          |                     |
+   |       1 |      NA | NA    | Si      | Timeout, vuelve al inicio | OK                  |
+   |       1 |       1 | NA    | Si      | Timeout, vuelve al inicio | OK                  |
+* Footnotes
+
+[fn:2] En el doc. de diseño no dice nada de pisos negativos, menos que menos como se ingresan.
+
+[fn:1] Igual podría haber sido un simple flag binario. Pero bueh.
