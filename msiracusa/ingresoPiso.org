@@ -1,0 +1,140 @@
+* Definición del problema
+Control de un ascensor: máquina de ingreso de piso
+4 posibles estados:
+  + EN_ESPERA_DE_DIGITO_1
+  + EN_ESPERA_DE_DIGITO_2_O_LETRA
+  + EN_ESPERA_DE_LETRA
+  + GUARDAR_PISO
+  
+HW que se necesita:
+  + Display LCD
+  + Teclado Matricial
+  
+** Diagrama Gral
+
+#+BEGIN_SRC plantuml :file try.png :export both
+@startuml
+class mefAscensor {
+  .. Fn. Públicas ..
+  mefAscensorInit()
+  mefAscensorUpdate()
+}
+
+class mefIngresoPiso {
+  .. Fn. Públicas ..
+  + mefIngresoPisoInit()
+  + mefIngresoPisoUpdate()
+  __ private data __
+  int age
+}
+
+class mefPuertas {
+  .. Fn. Públicas ..
+   + mefPuertasInit() 
+   + mefPuertasUpdate()
+}
+
+class mefModoConfiguracion {
+  .. Fn. Públicas ..
+  + mefModoConfiguracionInit()
+  + mefModoConfiguracionUpdate()
+}
+
+interface program {
+  .. Var. públicas ..
+  + bool_t modoConfiguracion
+  + bool_t secuenciaAperturaDePuertas
+  + bool_t secuenciaCerradoDePuertas
+  + circularBuffer_t pisosPendientes
+}
+@enduml
+#+END_SRC
+
+#+RESULTS:
+[[file:try.png]]
+
+** Diagrama MEF Ingreso Piso
+#+BEGIN_SRC plantuml :file mefingresopiso.png
+@startuml
+[*] --> MEFIngresoPiso
+
+state MEFIngresoPiso {
+  EN_ESPERA_DE_DIGITO_1 --> EN_ESPERA_DE_DIGITO_2_O_LETRA: presionan un número
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_LETRA: presionan un número
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> GUARDAR_PISO: presionan ""A""
+  
+  EN_ESPERA_DE_DIGITO_2_O_LETRA --> EN_ESPERA_DE_DIGITO_1: timeout[temporizador1=0] o presionan ""B""
+  EN_ESPERA_DE_LETRA --> EN_ESPERA_DE_DIGITO_1: timeout[temporizador2=0] o presionan ""B""
+  EN_ESPERA_DE_LETRA --> GUARDAR_PISO: presionan ""A""
+  GUARDAR_PISO --> EN_ESPERA_DE_DIGITO_1:cambia de estado (estado espurio)
+
+   EN_ESPERA_DE_DIGITO_1: Poner a 0 vectorPiso
+
+   EN_ESPERA_DE_DIGITO_2_O_LETRA: Inicializar timer1
+   EN_ESPERA_DE_DIGITO_2_O_LETRA: guardar digito1
+
+   EN_ESPERA_DE_LETRA: inicializar timer2
+   EN_ESPERA_DE_LETRA: guardar digito2
+
+   GUARDAR_PISO: Guardar en el buffer el piso como int
+}
+
+@enduml
+#+END_SRC
+
+#+RESULTS:
+[[file:mefingresopiso.png]]
+
+
+
+** Variables que necesito
+   #+BEGIN_SRC c
+     uint8_t vector_piso;
+   #+END_SRC
+
+** Variables que se deben exponer
+   #+BEGIN_SRC c
+     uint8_t timeout; // se debe controlar desde config
+     uint8_t piso_max; // se debe controlar desde config
+     uint8_t piso_min; // se debe controlar desde config
+     circularBuffer // definido en programa.c
+   #+END_SRC
+** Control de timers
++ Qué tipo de variable utilizo?
+  + timerMap_t (TIMER0, TIMER1, TIMER2 o TIMER3)
+  + en teoría, cada vez que se llame a la función habrá pasado un segundo, con lo cual no sería necesario usar una interrupción 
++ Cómo incremento el reloj?
+  + Contador uint
++ Cómo determino el paso del tiempo?
+  + compare simple
++ FIXME: Nunca se debe propagar un timer desde un estado a otro.
+
+*** Funcionamiento
+Utilicé una variable extra (llamada =uint8_t context=) para mantener el estado del timer[fn:1]. 
+1. La primera vez que se llama a =updateTimer()= se setea =context= con el flag =TIMER_STARTED= y comienza a decrementearse =timer= desde TIMEOUT.
+2. Sucesivas llamadas decrementan el valor de =timer=.
+3. Cuando =timer= llega a =0=, se limpia el flag =TIMER_STARTED= y _debe cambiar el estado de la MEF_ (no se debe llamar a =updateTimer()= desde el mismo estado luego de haber limpiado el flag). Dicho de otra manera bajo la condición que testea que el timer haya expirado debe también incluir una transición de estado.
+4. Si el usuario ingresa una opción antes de que expire el timer, se debe limpiar el flag para que una futura llamada se inicialice nuevamente el =timer= a =TIMEOUT=
+
+
+** Casos de borde
++ Qué sucede cuando se presiona alguna letra distinta de =A= o =B=?
++ Qué errores se pueden dar con los pisos negativos[fn:2]?
++ Condición de carrera al accesar una variable compartida con los otros MEF?
++ Existe un algoritmo que se pueda utilizar para actualizar el buffer circular de tal manera que los pisos se guarden ordenados? Igual esto se deber hacer en otro módulo.
+
+** Pruebas
+   | DIGITO1 | DIGITO2 | LETRA | TIMEOUT | Resultado esperado        | Resultado observado |
+   |       1 |       1 | A     | No      | Almacena 11 en el buffer  | OK                  |
+   |       0 |       1 | A     | No      | Almacena 1 en el buffer   | OK                  |
+   |       1 |       A | NA    | No      | Almacena 1 en el buffer   | OK                  |
+   |       1 |       1 | B     | No      | Cancela el ingreso        | OK                  |
+   |       1 |      NA | B     | No      | Cancela el ingreso        | OK                  |
+   |       9 |       9 | NA    | No      | Da piso invalido          |                     |
+   |       1 |      NA | NA    | Si      | Timeout, vuelve al inicio | OK                  |
+   |       1 |       1 | NA    | Si      | Timeout, vuelve al inicio | OK                  |
+* Footnotes
+
+[fn:2] En el doc. de diseño no dice nada de pisos negativos, menos que menos como se ingresan.
+
+[fn:1] Igual podría haber sido un simple flag binario. Pero bueh.
